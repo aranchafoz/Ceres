@@ -1,55 +1,137 @@
 package com.example.projectceres.ceres;
 
-import android.content.Intent;
+import android.os.AsyncTask;
+import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
+import android.util.Log;
+import android.widget.Toast;
 
-/**
- * Created by aranchafoz on 23/04/16.
- */
-public class Maps extends AppCompatActivity {
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.MarkerOptions;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.Socket;
+import java.net.UnknownHostException;
+import java.util.Scanner;
+
+public class Maps extends FragmentActivity implements OnMapReadyCallback {
+
+    private GoogleMap mMap;
+    private final int PORT = 8080;
+    private final String IP = "192.168.171.106";
+
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_maps);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar_maps);
-        setSupportActionBar(toolbar);
+        setContentView(R.layout.activity_maps3);
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
 
-        // Habilitas el volver atrás
-        if (getSupportActionBar() != null)
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        Thread t = new Thread() {
+            public void run(){
+                while (true) {
+                    MyClientTask clientTask = new MyClientTask(IP, PORT);
+                    clientTask.execute();
+                    Log.i("thread", "it");
+                    try {
+                        Thread.sleep(500);
+                    } catch (Exception e) {
+
+                    }
+                }
+            }
+        };
+        t.start();
+
+        Log.i("thread", "out of the thread");
     }
 
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-
-        MenuInflater menuInflater = getMenuInflater();
-        menuInflater.inflate(R.menu.menu_maps, menu);
-
-        MenuItem garphicsItem = menu.findItem(R.id.action_graphics);
-
-        return super.onCreateOptionsMenu(menu);
+    public void onMapReady(GoogleMap googleMap) {
+        mMap = googleMap;
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
+    public class MyClientTask extends AsyncTask<Void, Void, Void> {
 
-        switch (item.getItemId()) {
-            case android.R.id.home: // Caso de cuando vuelves atrás
-                this.finish();
-                return true;
-            case R.id.action_graphics:
-                Intent intent = new Intent(this,Graphics.class);
-                startActivity(intent);
-                return true;
+        String dstAddress;
+        int dstPort;
+        String response = "";
 
+        MyClientTask(String addr, int port){
+            dstAddress = addr;
+            dstPort = port;
         }
-        return super.onOptionsItemSelected(item);
+
+        @Override
+        protected Void doInBackground(Void... arg0) {
+
+            Socket socket = null;
+
+            try {
+                socket = new Socket(dstAddress, dstPort);
+
+                ByteArrayOutputStream byteArrayOutputStream =
+                        new ByteArrayOutputStream(1024);
+                byte[] buffer = new byte[1024];
+
+                int bytesRead;
+                InputStream inputStream = socket.getInputStream();
+
+    /*
+     * notice:
+     * inputStream.read() will block if no data return
+     */
+                while ((bytesRead = inputStream.read(buffer)) != -1){
+                    byteArrayOutputStream.write(buffer, 0, bytesRead);
+                    response += byteArrayOutputStream.toString("UTF-8");
+                }
+
+            } catch (UnknownHostException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+                response = "UnknownHostException: " + e.toString();
+            } catch (IOException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+                response = "IOException: " + e.toString();
+            }finally{
+                if(socket != null){
+                    try {
+                        socket.close();
+                    } catch (IOException e) {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                }
+            }
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void result) {
+            Log.i("gps", response);
+            try {
+                Scanner s = new Scanner(response);
+                double latitude = 0, longitude = 0;
+                latitude = Double.valueOf(s.next());
+                Log.i("latitude", Double.toString(latitude));
+                longitude = Double.valueOf(s.next());
+                Log.i("longitude", Double.toString(longitude));
+                LatLng latLng = new LatLng(latitude, longitude);
+                mMap.addMarker(new MarkerOptions().position(latLng).title("Drone"));
+                mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+            } finally { }
+            super.onPostExecute(result);
+        }
+
     }
 }
